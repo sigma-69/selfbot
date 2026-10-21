@@ -3,13 +3,16 @@ const { Client, RichPresence } = require('discord.js-selfbot-v13');
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const { loadTheme, clip, idleLine } = require('./themes/load');
+
+const theme = loadTheme();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
-const CLIENT_ID = '1538974355193593856';
+const CLIENT_ID = theme.clientId;
 
 // Trạng thái bài hát hiện tại
 let currentTrack = null;
@@ -26,6 +29,12 @@ let lastWsError = null;
 let storageChannel = null;
 const lyricsCache = new Map();
 const cdnImageCache = new Map();
+const externalCache = new Map();
+
+let themeImages = { large: null, small: null };
+let resolvingImages = null;
+let lastImageAttempt = 0;
+let loggedMissingToken = false;
 
 // Làm sạch tên ca sĩ
 function cleanArtist(artist) {
@@ -138,6 +147,110 @@ async function uploadToDiscordCDN(imageUrl) {
     return null;
 }
 
+// discord.js-selfbot-v13@3.7.1 (RichPresenceAssets.parseImage) chỉ nhận:
+// mp:..., external/... (đổi thành mp:), youtube:, spotify:, twitch:,
+// asset id 17-19 số, hoặc URL cdn.discordapp.com / media.discordapp.net.
+// URL http khác ném INVALID_URL. Ảnh công khai phải đi qua getExternal trước.
+function assetKind(image) {
+    if (!image || typeof image !== 'string') return 'empty';
+    if (['mp:', 'youtube:', 'spotify:', 'twitch:'].some(prefix => image.startsWith(prefix))) return 'direct';
+    if (image.startsWith('external/')) return 'direct';
+    if (/^[0-9]{17,19}$/.test(image)) return 'direct';
+    try {
+        const url = new URL(image);
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') return 'invalid';
+        if (url.hostname === 'cdn.discordapp.com' || url.hostname === 'media.discordapp.net') return 'direct';
+        return 'external';
+    } catch {
+        return 'invalid';
+    }
+}
+
+function cacheExternal(url, assetPath) {
+    if (url && assetPath) externalCache.set(url, assetPath);
+    return assetPath || null;
+}
+
+async function resolveOneExternal(image) {
+    const kind = assetKind(image);
+    if (kind === 'empty' || kind === 'invalid') return null;
+    if (kind === 'direct') return image;
+    if (externalCache.has(image)) return externalCache.get(image);
+
+    if (client.token && /^[0-9]{17,19}$/.test(CLIENT_ID || '')) {
+        try {
+            const res = await RichPresence.getExternal(client, CLIENT_ID, image);
+            const match = Array.isArray(res)
+                ? res.find(item => item && item.url === image) || res[0]
+                : null;
+            if (match && match.external_asset_path) {
+                console.log(`🖼️ Ảnh theme qua getExternal: ${match.external_asset_path}`);
+                return cacheExternal(image, match.external_asset_path);
+            }
+        } catch (err) {
+            console.error(`⚠️ getExternal thất bại: ${err.message}`);
+        }
+    }
+
+    const cdnUrl = await uploadToDiscordCDN(image);
+    if (cdnUrl) {
+        console.log(`🖼️ Ảnh theme qua Discord CDN: ${cdnUrl}`);
+        return cacheExternal(image, cdnUrl);
+    }
+
+    console.error('⚠️ Chưa gắn được ảnh theme. Cần đăng nhập Discord (getExternal) hoặc kênh bot-storage.');
+    return null;
+}
+
+async function resolveThemeImages() {
+    if (resolvingImages) return resolvingImages;
+    lastImageAttempt = Date.now();
+    resolvingImages = (async () => {
+        const large = await resolveOneExternal(theme.largeImage);
+        const small = await resolveOneExternal(theme.smallImage);
+        themeImages = { large, small };
+    })().finally(() => {
+        resolvingImages = null;
+    });
+    return resolvingImages;
+}
+
+function scheduleThemeImages() {
+    const needLarge = theme.largeImage && !themeImages.large;
+    const needSmall = theme.smallImage && !themeImages.small;
+    if (!needLarge && !needSmall) return;
+    if (!client.user || !client.token) return;
+    if (resolvingImages) return;
+    if (Date.now() - lastImageAttempt < 60000) return;
+    resolveThemeImages().catch(err => console.error('⚠️ resolveThemeImages:', err.message));
+}
+
+function applyImage(presence, slot, image, text) {
+    if (!image) return;
+    try {
+        if (slot === 'large') {
+            presence.setAssetsLargeImage(image);
+            if (text) presence.setAssetsLargeText(clip(text));
+        } else {
+            presence.setAssetsSmallImage(image);
+            if (text) presence.setAssetsSmallText(clip(text));
+        }
+    } catch (err) {
+        console.error(`⚠️ Ảnh ${slot} bị thư viện từ chối: ${err.message}`);
+    }
+}
+
+function applyButtons(presence, buttons) {
+    for (const button of (buttons || []).slice(0, 2)) {
+        if (!button || !button.label || !button.url) continue;
+        try {
+            presence.addButton(clip(button.label, 32), button.url);
+        } catch (err) {
+            console.error('⚠️ Nút presence bị bỏ:', err.message);
+        }
+    }
+}
+
 // Phân tích cú pháp LRC [mm:ss.xx]
 function parseLRC(lrcText) {
     if (!lrcText) return [];
@@ -235,6 +348,7 @@ client.on('warn', warn => {
 // Cập nhật trạng thái Rich Presence lên Discord
 async function updatePresence(force = false) {
     if (!client.user) return;
+    scheduleThemeImages();
 
     // Nếu quá 7 giây không nhận được tín hiệu -> quay về mặc định
     const isMusicActive = currentTrack && !currentTrack.paused && (Date.now() - lastMusicUpdate < 7000);
@@ -275,17 +389,20 @@ async function updatePresence(force = false) {
             const platform = track.platform || 'Music';
             const songName = cleanTitle(track.title) || 'Unknown Song';
             const artistName = cleanArtist(track.artist) || 'Artist';
+            const music = theme.music;
 
-            // 📌 DÒNG 1: Tên bài hát
-            const detailsText = `🎵 ${songName}`.substring(0, 127);
-            
+            // 📌 DÒNG 1: Tên bài hát (tai nghe — motif của Miku)
+            const detailsText = clip(`${music.songEmoji} ${songName}`);
+
             // 📌 DÒNG 2: Tên ca sĩ
-            const stateText = `🎧 ${artistName}`.substring(0, 127);
+            const stateText = clip(`${music.artistEmoji} ${artistName}`);
 
             // 📌 DÒNG 3: Lời bài hát chạy theo từng giây (hoặc platform nếu đang dạo nhạc)
-            const largeImageText = activeLyric ? `🎤 ${activeLyric}` : `✨ ${platform}`;
+            const largeImageText = clip(
+                activeLyric ? `${music.lyricEmoji} ${activeLyric}` : `${music.platformEmoji} ${platform}`
+            );
 
-            const presenceKey = `MUSIC|${songName}|${stateText}|${currentImageKey}|${largeImageText}`;
+            const presenceKey = `MUSIC|${songName}|${stateText}|${currentImageKey}|${largeImageText}|${themeImages.large || ''}|${themeImages.small || ''}`;
             if (!force && presenceKey === lastPresenceKey && (Date.now() - lastSetActivityTime < 12000)) {
                 return;
             }
@@ -295,30 +412,41 @@ async function updatePresence(force = false) {
             const presence = new RichPresence(client)
                 .setApplicationId(CLIENT_ID)
                 .setType('LISTENING') // 🎧 Đang nghe
-                .setName('PhucLam')
+                .setName(clip(theme.name))
                 .setDetails(detailsText)
                 .setState(stateText);
 
             if (currentImageKey) {
-                presence.setAssetsLargeImage(currentImageKey);
-                presence.setAssetsLargeText(largeImageText.substring(0, 127));
+                applyImage(presence, 'large', currentImageKey, largeImageText);
+            } else if (themeImages.large) {
+                applyImage(presence, 'large', themeImages.large, largeImageText);
             }
+            applyImage(presence, 'small', themeImages.small, theme.smallText);
 
             if (duration > 0 && liveCurrentTime >= 0) {
                 presence.setStartTimestamp(Math.floor(Date.now() - liveCurrentTime * 1000));
                 presence.setEndTimestamp(Math.floor(Date.now() + (duration - liveCurrentTime) * 1000));
             }
 
+            const musicButtons = [];
             if (track.url && (track.url.startsWith('http://') || track.url.startsWith('https://'))) {
-                presence.addButton(`▶️ Nghe trên ${platform}`, track.url);
+                musicButtons.push({
+                    label: clip(`${music.listenEmoji} Nghe trên ${platform}`, 32),
+                    url: track.url,
+                });
             }
-            presence.addButton('PhucFeFa', 'https://github.com/PhucFeFa');
+            for (const button of theme.buttons) {
+                if (musicButtons.length >= 2) break;
+                musicButtons.push(button);
+            }
+            applyButtons(presence, musicButtons);
 
             await client.user.setActivity(presence);
 
         } else {
-            // --- CHẾ ĐỘ MẶC ĐỊNH (Đang nghe PhucLam - Gender: Male) ---
-            const presenceKey = 'DEFAULT_LISTENING';
+            // --- CHẾ ĐỘ MẶC ĐỊNH: Listening to Miku Nakano, câu xoay theo theme ---
+            const line = idleLine(theme);
+            const presenceKey = `IDLE|${line.index}|${themeImages.large || ''}|${themeImages.small || ''}`;
             if (!force && presenceKey === lastPresenceKey && (Date.now() - lastSetActivityTime < 20000)) {
                 return;
             }
@@ -328,11 +456,14 @@ async function updatePresence(force = false) {
             const presence = new RichPresence(client)
                 .setApplicationId(CLIENT_ID)
                 .setType('LISTENING')
-                .setName('PhucLam')
-                .setDetails('Gender: Male')
-                .setStartTimestamp(startTime)
-                .addButton('PhucFeFa', 'https://github.com/PhucFeFa')
-                .addButton('snvv', 'https://www.instagram.com/lhphucclh?igsh=dHc4dmlqd2tseGE1&igsi=dHc4dmlqd2tseGE1&utm_source=qr');
+                .setName(clip(theme.name))
+                .setDetails(clip(line.details))
+                .setState(clip(line.state))
+                .setStartTimestamp(startTime);
+
+            applyImage(presence, 'large', themeImages.large, theme.largeText);
+            applyImage(presence, 'small', themeImages.small, theme.smallText);
+            applyButtons(presence, theme.buttons);
 
             await client.user.setActivity(presence);
         }
@@ -412,6 +543,10 @@ async function ensureDiscordLogin() {
     const rawToken = process.env.DISCORD_TOKEN;
     if (!rawToken) {
         loginError = 'NO_TOKEN_CONFIGURED';
+        if (!loggedMissingToken) {
+            loggedMissingToken = true;
+            console.log('⚠️ NO_TOKEN_CONFIGURED — thiếu DISCORD_TOKEN. Server vẫn chạy, chưa đăng nhập Discord.');
+        }
         return;
     }
 
@@ -434,7 +569,7 @@ async function ensureDiscordLogin() {
 // Router nhận dữ liệu nhạc từ trình duyệt (Hỗ trợ cả POST và GET)
 app.get('/', (req, res) => {
     ensureDiscordLogin();
-    res.send('✅ Discord 24/7 Music & Synced Lyrics Selfbot is RUNNING on Alwaysdata!');
+    res.send(`✅ Discord 24/7 Music & Synced Lyrics Selfbot is RUNNING (theme: ${theme.id}).`);
 });
 
 // Endpoint kích hoạt kết nối lại thủ công
@@ -549,12 +684,22 @@ client.on('ready', async () => {
         await initStorageChannel(client);
     } catch (e) {}
 
+    try {
+        await Promise.race([
+            resolveThemeImages(),
+            new Promise(resolve => setTimeout(resolve, 8000)),
+        ]);
+    } catch (e) {}
+
     updatePresence(true);
 
     setInterval(() => {
         updatePresence(false);
     }, 500);
 });
+
+console.log(`🎧 Theme "${theme.id}": Listening to ${theme.name} · xoay mỗi ${Math.round(theme.rotateIntervalMs / 1000)}s`);
+console.log('🖼️ Ảnh idle dùng URL công khai → RichPresence.getExternal() (mp:external). Dự phòng: upload Discord CDN.');
 
 // Khởi chạy đăng nhập và cơ chế giám sát tự phục hồi kết nối 24/7
 ensureDiscordLogin();
