@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="robots" content="noindex">
+  <title>Miku · Bảng điều khiển</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="atmosphere" aria-hidden="true">
+    <span class="orb orb-blue"></span>
+    <span class="orb orb-matcha"></span>
+    <span class="watermark">3</span>
+  </div>
+
+  <p id="boot" class="boot">Đang mở bảng điều khiển…</p>
+
+  <main id="login" class="login" hidden>
+    <form id="login-form" class="login-card">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 64 64"><path d="M10 32a22 22 0 0 1 44 0" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><rect x="6" y="28" width="12" height="20" rx="5"/><rect x="46" y="28" width="12" height="20" rx="5"/></svg>
+      </div>
+      <p class="eyebrow">中野三玖</p>
+      <h1>Bảng điều khiển</h1>
+      <p class="lede">Nhập mật khẩu để xem và chỉnh Rich Presence.</p>
+      <label for="password">Mật khẩu</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <p id="login-error" class="form-error" role="alert"></p>
+      <button type="submit" class="btn btn-primary" id="login-submit">Vào bảng</button>
+    </form>
+  </main>
+
+  <div id="app" class="app" hidden>
+    <header class="top">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 64 64"><path d="M10 32a22 22 0 0 1 44 0" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><rect x="6" y="28" width="12" height="20" rx="5"/><rect x="46" y="28" width="12" height="20" rx="5"/></svg>
+        </div>
+        <div>
+          <p class="eyebrow">中野三玖 · tai nghe xanh · matcha soda</p>
+          <h1>Bảng điều khiển Rich Presence</h1>
+        </div>
+      </div>
+      <div class="top-actions">
+        <span id="mode-chip" class="chip">Đang tải</span>
+        <button type="button" class="btn btn-ghost" id="logout" hidden>Đăng xuất</button>
+      </div>
+    </header>
+
+    <p id="readonly-banner" class="banner" hidden>
+      Chưa đặt <strong>DASHBOARD_PASSWORD</strong>. Bảng này chỉ để xem. Thêm mật khẩu vào biến môi trường rồi khởi động lại để lưu theme và bấm các thao tác.
+    </p>
+
+    <div class="layout">
+      <section class="stage" aria-label="Trạng thái và xem trước">
+        <div class="status-grid">
+          <article class="stat">
+            <p class="stat-label">Tài khoản</p>
+            <p class="stat-value" id="stat-user">—</p>
+            <p class="stat-note" id="stat-user-note"></p>
+          </article>
+          <article class="stat">
+            <p class="stat-label">Kết nối</p>
+            <p class="stat-value" id="stat-ws">—</p>
+            <p class="stat-note" id="stat-ws-note"></p>
+          </article>
+          <article class="stat">
+            <p class="stat-label">Chế độ</p>
+            <p class="stat-value" id="stat-mode">—</p>
+            <p class="stat-note" id="stat-mode-note"></p>
+          </article>
+          <article class="stat">
+            <p class="stat-label">Bài hát / lời</p>
+            <p class="stat-value" id="stat-track">Không phát</p>
+            <p class="stat-note" id="stat-lyric">Lời sẽ hiện khi có dòng khớp thời gian.</p>
+          </article>
+        </div>
+
+        <div class="preview-wrap">
+          <div class="preview-head">
+            <h2>Xem trước</h2>
+            <span id="preview-flag" class="chip chip-quiet">Trên Discord</span>
+          </div>
+          <article class="rpc" id="preview" aria-live="polite">
+            <div class="rpc-row">
+              <div class="rpc-art">
+                <img id="preview-large" alt="">
+                <span class="rpc-fallback" id="preview-fallback" hidden>🎧</span>
+                <img id="preview-small" class="rpc-small" alt="" hidden>
+              </div>
+              <div class="rpc-copy">
+                <p class="rpc-listening">Listening to</p>
+                <p class="rpc-name" id="preview-name">Miku Nakano</p>
+                <p class="rpc-details" id="preview-details"></p>
+                <p class="rpc-state" id="preview-state"></p>
+                <p class="rpc-time" id="preview-time"></p>
+              </div>
+            </div>
+            <div class="rpc-progress" id="preview-progress" hidden>
+              <span id="preview-progress-bar"></span>
+            </div>
+            <div class="rpc-buttons" id="preview-buttons"></div>
+          </article>
+          <p class="hint">Thẻ này mô phỏng activity LISTENING: tên, hai dòng chữ, ảnh, nút và đồng hồ.</p>
+        </div>
+
+        <div class="actions">
+          <h2>Thao tác nhanh</h2>
+          <div class="action-row">
+            <button type="button" class="btn btn-ghost" id="pause" data-write>Tạm dừng</button>
+            <button type="button" class="btn btn-ghost" id="refresh" data-write>Làm mới</button>
+            <button type="button" class="btn btn-ghost" id="reconnect" data-write>Kết nối lại</button>
+            <button type="button" class="btn btn-ghost" id="clear-music" data-write>Xóa nhạc</button>
+          </div>
+          <p class="hint">Tạm dừng gỡ presence khỏi Discord. Nhạc từ trình duyệt vẫn được nhận ở nền.</p>
+        </div>
+      </section>
+
+      <section class="editor" aria-label="Chỉnh theme">
+        <div class="editor-head">
+          <h2>Chỉnh theme</h2>
+          <span id="custom-chip" class="chip chip-quiet">Mặc định Miku</span>
+        </div>
+        <p class="hint">Mỗi dòng details, state và hover tối đa 128 ký tự. Nhãn nút tối đa 32. Lưu xong là presence đổi ngay, và bản này nằm trong <code>data/theme.json</code>.</p>
+
+        <form id="theme-form">
+          <div class="fields">
+            <label>
+              Tên hiển thị
+              <input id="name" name="name" maxlength="128" required autocomplete="off">
+              <span class="count" data-count-for="name"></span>
+            </label>
+            <label>
+              Application ID
+              <input id="clientId" name="clientId" inputmode="numeric" maxlength="19" autocomplete="off" spellcheck="false">
+              <span class="field-help">Snowflake 17–19 số. Ảnh public đi qua getExternal của app này.</span>
+            </label>
+            <label>
+              Mỗi câu giữ bao lâu (giây)
+              <input id="rotate" name="rotate" type="number" min="20" max="3600" step="1" required>
+              <span class="field-help">Từ 20 giây đến 60 phút. Mặc định 60 giây.</span>
+            </label>
+          </div>
+
+          <div class="block">
+            <div class="block-head">
+              <h3>Câu xoay vòng</h3>
+              <button type="button" class="btn btn-matcha" id="add-line" data-write>Thêm câu</button>
+            </div>
+            <div id="lines" class="lines"></div>
+          </div>
+
+          <div class="block">
+            <h3>Ảnh</h3>
+            <div class="image-grid">
+              <label>
+                Ảnh lớn
+                <input id="largeImage" name="largeImage" type="text" placeholder="https://… hoặc mp:" autocomplete="off" spellcheck="false">
+              </label>
+              <label>
+                Hover ảnh lớn
+                <input id="largeText" name="largeText" maxlength="128" autocomplete="off">
+                <span class="count" data-count-for="largeText"></span>
+              </label>
+              <label>
+                Ảnh nhỏ
+                <input id="smallImage" name="smallImage" type="text" placeholder="https://… hoặc mp:" autocomplete="off" spellcheck="false">
+              </label>
+              <label>
+                Hover ảnh nhỏ
+                <input id="smallText" name="smallText" maxlength="128" autocomplete="off">
+                <span class="count" data-count-for="smallText"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="block">
+            <h3>Nút bấm</h3>
+            <div class="button-grid">
+              <label>Nhãn nút 1<input id="b1-label" maxlength="32" autocomplete="off"></label>
+              <label>URL nút 1<input id="b1-url" type="url" placeholder="https://…" autocomplete="off"></label>
+              <label>Nhãn nút 2<input id="b2-label" maxlength="32" autocomplete="off"></label>
+              <label>URL nút 2<input id="b2-url" type="url" placeholder="https://…" autocomplete="off"></label>
+            </div>
+          </div>
+
+          <ul id="form-errors" class="form-errors" hidden></ul>
+
+          <div class="save-row">
+            <button type="submit" class="btn btn-primary" id="save" data-write>Lưu và áp dụng</button>
+            <button type="button" class="btn btn-ghost" id="reset" data-write>Đặt lại theme Miku</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </div>
+
+  <p id="toast" class="toast" role="status" hidden></p>
+  <noscript><p class="boot">Cần bật JavaScript để dùng bảng điều khiển.</p></noscript>
+  <script src="/app.js"></script>
+</body>
+</html>
