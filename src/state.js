@@ -1,0 +1,21 @@
+/** Mutable runtime shared by Discord, presence, and the dashboard. */
+module.exports = {
+    currentTrack: null,
+    currentLyrics: [],
+    currentImageKey: null,
+    lastTrackId: '',
+    lastMusicUpdate: 0,
+    lastPresenceKey: '',
+    lastSetActivityTime: 0,
+    isLoggingIn: false,
+    loginError: null,
+    lastWsError: null,
+    storageChannel: null,
+    themeImages: { large: null, small: null },
+    resolvingImages: null,
+    lastImageAttempt: 0,
+    loggedMissingToken: false,
+    presencePaused: false,
+    startTime: Date.now(),
+    presenceInterval: null,
+};

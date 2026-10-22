@@ -15,8 +15,9 @@
  *
  * Ảnh là chân dung công khai, host ổn định (AniList CDN từ 2019, MyAnimeList CDN).
  * discord.js-selfbot-v13@3.7.1 ném INVALID_URL nếu đưa URL http thường vào
- * setAssetsLargeImage. index.js gọi RichPresence.getExternal() để đổi thành
+ * setAssetsLargeImage. src/images.js gọi RichPresence.getExternal() để đổi thành
  * mp:external/..., rồi mới gắn. Nếu API từ chối thì upload lên Discord CDN.
+ * Bản chỉnh trên bảng điều khiển ghi vào data/theme.json và đè file này.
  *
  * clientId mặc định là application của tác giả gốc — không upload asset lên
  * app đó được. Đặt CLIENT_ID của bạn trong .env nếu getExternal lỗi.
